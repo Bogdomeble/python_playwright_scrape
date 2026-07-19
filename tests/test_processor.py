@@ -1,4 +1,3 @@
-# tests/test_processor.py
 import os
 import io
 from PIL import Image

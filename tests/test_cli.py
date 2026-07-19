@@ -1,4 +1,3 @@
-# tests/test_cli.py
 import pytest
 import logging
 from unittest.mock import patch

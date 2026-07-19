@@ -1,4 +1,3 @@
-# scraper/cli.py
 import argparse
 import asyncio
 import sys
