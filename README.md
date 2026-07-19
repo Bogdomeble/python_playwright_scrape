@@ -53,5 +53,5 @@ Możesz skompilować aplikację przy użyciu PyInstaller:
 
 ```powershell
 pip install pyinstaller
-pyinstaller --clean --onedir --name "CanvaScraper" --collect-all playwright main.py
+pyinstaller --clean  --noconfirm --onedir --name "CanvaScraper" --collect-all playwright main.py 
 ```

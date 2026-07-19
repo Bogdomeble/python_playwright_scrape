@@ -60,7 +60,7 @@ class CanvaScraperEngine:
         async with async_playwright() as p:
             logger.info("Uruchamianie przeglądarki Chromium...")
             browser = await p.chromium.launch(
-                headless=True, # Flaga headless=False optymalizuje renderowanie WebGL w niektórych środowiskach
+                headless=False, # Flaga headless=False optymalizuje renderowanie WebGL w niektórych środowiskach
                 channel="chrome",
                 args=[
                     "--headless-new",
@@ -70,7 +70,7 @@ class CanvaScraperEngine:
                     "--mute-audio"
 
                     # Wypycha okno poza widoczny obszar monitora!
-                    # "--window-position=-32000,-32000",
+                    "--window-position=-32000,-32000",
                 ]
             )
             
