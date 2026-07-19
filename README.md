@@ -12,7 +12,7 @@ Profesjonalne narzędzie działające w wierszu poleceń do asynchronicznego pob
 1. Pobierz repozytorium.
 2. Zainstaluj zależności:
 
-```bash
+```powershell
 pip install -r requirements.txt
 playwright install chrome
 ```
@@ -21,7 +21,7 @@ Użycie (Use Cases)
 
 Główna składnia:
 
-```bash
+```powershell
 python main.py <URL> -s <LICZBA_SLAJDÓW> [OPCJE]
 ```
 
@@ -35,7 +35,7 @@ python main.py "https://www.canva.com/design/XXXX/view?embed" -s 30
 ### Przypadek 2: Własna nazwa pliku i mniejsze obciążenie sieci
 
 
-```bash
+```powershell
 python main.py "https://www.canva.com/design/XXXX/view?embed" -s 30 -o "szkolenie_2024.pdf" -c 2
 ```
 
@@ -44,14 +44,14 @@ python main.py "https://www.canva.com/design/XXXX/view?embed" -s 30 -o "szkoleni
 ### Przypadek 3: Tryb deweloperski (Debugowanie)
 
 
-```bash
+```powershell
 python main.py "URL" -s 5 --debug
 ```
 Budowanie aplikacji binarnej (.exe)
 
 Możesz skompilować aplikację przy użyciu PyInstaller:
 
-```bash
+```powershell
 pip install pyinstaller
 pyinstaller --onefile --name "CanvaScraper" main.py
 ```

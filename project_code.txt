@@ -1,0 +1,392 @@
+PROJECT CODE DUMP
+FILES: 8
+================================================================================
+
+INDEX:
+main.py
+scraper/__init__.py
+scraper/cli.py
+scraper/config.py
+scraper/engine.py
+scraper/processor.py
+tests/test_engine.py
+tests/test_processor.py
+
+================================================================================
+
+FILE: main.py
+================================================================================
+# main.py
+from scraper.cli import main_cli
+
+if __name__ == "__main__":
+    main_cli()
+
+FILE: scraper/__init__.py
+================================================================================
+# scraper/__init__.py
+
+
+FILE: scraper/cli.py
+================================================================================
+# scraper/cli.py
+import argparse
+import asyncio
+import sys
+import os
+import subprocess
+from scraper.config import ScraperConfig, setup_logger
+from scraper.engine import CanvaScraperEngine
+
+def run_single(url: str, slides: int, output: str, concurrent: int, debug: bool):
+    """Pobiera pojedynczą prezentację."""
+    logger = setup_logger(debug)
+    config = ScraperConfig(
+        base_url=url,
+        output_pdf=output,
+        total_slides=slides,
+        max_concurrent=concurrent
+    )
+    engine = CanvaScraperEngine(config)
+    
+    try:
+        asyncio.run(engine.run())
+    except Exception as e:
+        logger.error(f"Wystąpił błąd krytyczny: {e}")
+
+def process_batch(filepath: str, concurrent: int, debug: bool):
+    """Pobiera wiele prezentacji na podstawie pliku tekstowego."""
+    logger = setup_logger(debug)
+    
+    if not os.path.exists(filepath):
+        logger.error(f"❌ Plik '{filepath}' nie istnieje.")
+        return
+
+    with open(filepath, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+
+    for i, line in enumerate(lines, start=1):
+        line = line.strip()
+        
+        # Ignoruj puste linie i komentarze
+        if not line or line.startswith("#"):
+            continue
+
+        parts = line.split()
+        if len(parts) < 2:
+            logger.warning(f"⚠️ Pomijam linię {i} - zły format. Wymagane min. URL i LICZBA_SLAJDÓW.")
+            continue
+
+        url = parts[0]
+        try:
+            slides = int(parts[1])
+        except ValueError:
+            logger.warning(f"⚠️ Pomijam linię {i} - liczba slajdów '{parts[1]}' nie jest prawidłowa.")
+            continue
+
+        output = parts[2] if len(parts) > 2 else f"batch_prezentacja_{i}.pdf"
+        
+        logger.info(f"\n" + "="*40)
+        logger.info(f"▶️ [ZADANIE {i}/{len(lines)}] Pobieranie: {output}")
+        logger.info("="*40)
+        
+        # Uruchomienie pobierania dla jednej linii z pliku
+        config = ScraperConfig(base_url=url, output_pdf=output, total_slides=slides, max_concurrent=concurrent)
+        engine = CanvaScraperEngine(config)
+        try:
+            asyncio.run(engine.run())
+        except Exception as e:
+            logger.error(f"❌ Błąd podczas przetwarzania zadania z linii {i}: {e}")
+
+def main_cli():
+    """Główny punkt wejścia wywoływany przez skrypt startowy."""
+    
+    # 1. WYKRYCIE "DWUKLIKU" I OTWARCIE POWERSHELLA
+    # sys.argv przechowuje argumenty z jakimi odpalono program. 
+    # Jeśli len == 1, oznacza to, że kliknięto w plik bez argumentów.
+    if len(sys.argv) == 1:
+        # Pobieramy nazwę naszego pliku (np. CanvaScraper.exe)
+        exe_name = os.path.basename(sys.executable) if getattr(sys, 'frozen', False) else "python main.py"
+        
+        welcome_msg = (
+            "Witaj w narzedziu Canva Scraper!\\n"
+            "System jest gotowy do przyjmowania komend.\\n"
+            f"Wpisz: .\\\\{exe_name} --help aby zobaczyc instrukcje."
+        )
+        
+        # Tworzymy komendę PowerShell. 
+        # Flaga -NoExit sprawia, że po wypisaniu tekstu powłoka zostaje włączona.
+        ps_command = f'Write-Host "{welcome_msg}" -ForegroundColor Cyan'
+        
+        # Otwieramy PowerShella jako oddzielny, niezależny proces
+        subprocess.Popen(['powershell', '-NoExit', '-Command', ps_command])
+        
+        # Zamykamy to krótkotrwałe okienko (CMD), które wygenerował Windows po kliknięciu
+        sys.exit(0)
+
+    # 2. STANDARDOWA LOGIKA CLI (Dla użytkowników wpisujących komendy)
+    parser = argparse.ArgumentParser(
+        description="Narzędzie CLI do asynchronicznego pobierania slajdów z Canvy."
+    )
+
+    # Wzajemnie wykluczająca się grupa - użytkownik może podać ALBO --url ALBO --batch
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--url", type=str, help="Adres URL pojedynczej prezentacji Canva.")
+    group.add_argument("--batch", type=str, help="Ścieżka do pliku tekstowego z wieloma zadaniami.")
+
+    parser.add_argument("-s", "--slides", type=int, help="Liczba slajdów (wymagane przy --url).")
+    parser.add_argument("-o", "--output", type=str, default="prezentacja.pdf", help="Nazwa pliku PDF (domyślnie: prezentacja.pdf).")
+    parser.add_argument("-c", "--concurrent", type=int, default=3, help="Max jednoczesnych połączeń (domyślnie: 3).")
+    parser.add_argument("--debug", action="store_true", help="Włącza szczegółowe logi.")
+
+    args = parser.parse_args()
+
+    # Logika trasowania na podstawie argumentów
+    if args.url:
+        if not args.slides:
+            parser.error("Argument -s/--slides jest wymagany, gdy używasz opcji --url.")
+        run_single(args.url, args.slides, args.output, args.concurrent, args.debug)
+        
+    elif args.batch:
+        process_batch(args.batch, args.concurrent, args.debug)
+
+FILE: scraper/config.py
+================================================================================
+# scraper/config.py
+from dataclasses import dataclass
+import logging
+
+@dataclass
+class ScraperConfig:
+    """Klasa przechowująca konfigurację pobierania."""
+    base_url: str
+    output_pdf: str
+    total_slides: int
+    max_concurrent: int = 3
+    timeout_ms: int = 60000
+    render_wait_ms: int = 8000
+    viewport_width: int = 1920
+    viewport_height: int = 1080
+
+def setup_logger(debug: bool = False) -> logging.Logger:
+    """Konfiguruje globalny system logowania (rejestrowania zdarzeń)."""
+    level = logging.DEBUG if debug else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
+    return logging.getLogger("CanvaScraper")
+
+FILE: scraper/engine.py
+================================================================================
+# scraper/engine.py
+import asyncio
+import logging
+from typing import List, Tuple
+from playwright.async_api import async_playwright, Browser, Page
+
+from scraper.config import ScraperConfig
+from scraper.processor import ImageProcessor
+
+logger = logging.getLogger("CanvaScraper")
+
+class CanvaScraperEngine:
+    """Silnik sterujący przeglądarką Chromium poprzez Playwright."""
+    
+    def __init__(self, config: ScraperConfig):
+        self.config = config
+        self.semaphore = asyncio.Semaphore(self.config.max_concurrent)
+
+    async def _fetch_slide(self, browser: Browser, page_num: int) -> Tuple[int, bytes]:
+        """Pobiera pojedynczy slajd w izolowanym kontekście przeglądarki."""
+        async with self.semaphore:
+            logger.info(f"[{page_num}/{self.config.total_slides}] Otwieranie slajdu...")
+            
+            context = await browser.new_context()
+            page = await context.new_page()
+            await page.set_viewport_size({
+                "width": self.config.viewport_width, 
+                "height": self.config.viewport_height
+            })
+            
+            url = f"{self.config.base_url}#{page_num}"
+            
+            try:
+                await page.goto(url, wait_until="load", timeout=self.config.timeout_ms)
+                # Wybudzenie interfejsu Canvy wirtualną myszką
+                await page.mouse.move(self.config.viewport_width // 2, self.config.viewport_height // 2)
+                await page.mouse.move(10, 10)
+                
+                # Dynamiczne oczekiwanie na wyrenderowanie tagów <img>
+                await page.wait_for_function("""
+                    () => {
+                        const images = Array.from(document.querySelectorAll('img'));
+                        return images.every(img => img.complete && img.naturalHeight > 0);
+                    }
+                """, timeout=15000)
+                
+            except Exception as e:
+                logger.warning(f"[{page_num}] Timeout lub błąd ładowania: {str(e)}. Wymuszam zrzut.")
+            
+            # Bufor czasowy na renderowanie WebGL przez silnik Canvy
+            await page.wait_for_timeout(self.config.render_wait_ms) 
+            
+            screenshot_bytes = await page.screenshot()
+            await context.close()
+            
+            logger.info(f"[{page_num}/{self.config.total_slides}] ✅ Zrzut ekranu pobrany.")
+            return page_num, screenshot_bytes
+
+    async def run(self):
+        """Główna orkiestracja pobierania wszystkich slajdów."""
+        async with async_playwright() as p:
+            logger.info("Uruchamianie przeglądarki Chromium...")
+            browser = await p.chromium.launch(
+                headless=False, # Flaga headless=False optymalizuje renderowanie WebGL w niektórych środowiskach
+                channel="chrome",
+                args=[
+                    "--disable-background-timer-throttling",
+                    "--disable-backgrounding-occluded-windows",
+                    "--disable-renderer-backgrounding",
+                    "--mute-audio"
+                ]
+            )
+            
+            tasks = [
+                self._fetch_slide(browser, page_num) 
+                for page_num in range(1, self.config.total_slides + 1)
+            ]
+            
+            # Zbieramy wyniki współbieżnie
+            raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+            await browser.close()
+            
+            # Filtrujemy błędy i sortujemy po numerze strony
+            valid_results = [res for res in raw_results if isinstance(res, tuple)]
+            valid_results.sort(key=lambda x: x[0])
+            
+            # Przetwarzanie i łączenie w PDF
+            images = [
+                ImageProcessor.process_screenshot(
+                    bytes_data, 
+                    self.config.viewport_width, 
+                    self.config.viewport_height
+                )
+                for _, bytes_data in valid_results
+            ]
+            
+            ImageProcessor.create_pdf(images, self.config.output_pdf)
+
+FILE: scraper/processor.py
+================================================================================
+# scraper/processor.py
+import io
+import logging
+from typing import List, Tuple
+from PIL import Image
+
+logger = logging.getLogger("CanvaScraper")
+
+class ImageProcessor:
+    """Klasa odpowiedzialna za przetwarzanie zrzutów ekranu i generowanie PDF."""
+    
+    @staticmethod
+    def process_screenshot(screenshot_bytes: bytes, width: int, height: int, crop_bottom: int = 0) -> Image.Image:
+        """Konwertuje bajty na obraz PIL i ewentualnie przycina (np. pasek nawigacyjny)."""
+        image = Image.open(io.BytesIO(screenshot_bytes)).convert('RGB')
+        if crop_bottom > 0:
+            image = image.crop((0, 0, width, height - crop_bottom))
+        else:
+            image = image.crop((0, 0, width, height))
+        return image
+
+    @staticmethod
+    def create_pdf(images: List[Image.Image], output_path: str) -> None:
+        """Łączy listę obiektów Image w jeden plik PDF."""
+        if not images:
+            logger.warning("Brak obrazów do zapisania. Przerywam generowanie PDF.")
+            return
+
+        logger.info(f"Rozpoczynam łączenie {len(images)} slajdów w PDF...")
+        try:
+            images[0].save(
+                output_path,
+                save_all=True,
+                append_images=images[1:]
+            )
+            logger.info(f"✅ Gotowe! Plik zapisano jako: {output_path}")
+        except Exception as e:
+            logger.error(f"❌ Błąd podczas zapisywania PDF: {e}")
+            raise
+
+FILE: tests/test_engine.py
+================================================================================
+# tests/test_engine.py
+import pytest
+import asyncio
+from unittest.mock import AsyncMock, patch
+from scraper.config import ScraperConfig
+from scraper.engine import CanvaScraperEngine
+
+@pytest.mark.asyncio
+async def test_fetch_slide_logic():
+    """Symulujemy działanie _fetch_slide bez otwierania prawdziwej przeglądarki."""
+    config = ScraperConfig("http://fake-url.com", "out.pdf", 1)
+    engine = CanvaScraperEngine(config)
+    
+    # Tworzymy atrapy obiektów Playwrighta
+    mock_page = AsyncMock()
+    mock_page.screenshot.return_value = b"fake_image_bytes"
+    
+    mock_context = AsyncMock()
+    mock_context.new_page.return_value = mock_page
+    
+    mock_browser = AsyncMock()
+    mock_browser.new_context.return_value = mock_context
+
+    # Uruchamiamy testowaną metodę
+    page_num, bytes_res = await engine._fetch_slide(mock_browser, 1)
+
+    # Weryfikacja
+    assert page_num == 1
+    assert bytes_res == b"fake_image_bytes"
+    mock_page.goto.assert_called_once()
+    mock_page.screenshot.assert_called_once()
+
+FILE: tests/test_processor.py
+================================================================================
+# tests/test_processor.py
+import pytest
+from PIL import Image
+import io
+import os
+from scraper.processor import ImageProcessor
+
+def test_process_screenshot():
+    """Test sprawdza czy obraz z bajtów jest poprawnie ładowany i przycinany."""
+    # Tworzymy fałszywy obrazek (czerwony kwadrat) w pamięci
+    img = Image.new('RGB', (1920, 1080), color = 'red')
+    img_byte_arr = io.BytesIO()
+    img.save(img_byte_arr, format='PNG')
+    fake_bytes = img_byte_arr.getvalue()
+
+    # Wywołujemy naszą metodę
+    processed_img = ImageProcessor.process_screenshot(fake_bytes, 1920, 1080)
+    
+    # Asserty sprawdzają warunki, jeśli fałsz -> test fail
+    assert processed_img.size == (1920, 1080)
+    assert processed_img.mode == 'RGB'
+
+def test_create_pdf(tmp_path):
+    """Test sprawdza czy plik PDF fizycznie się tworzy na dysku."""
+    img1 = Image.new('RGB', (100, 100), color='blue')
+    img2 = Image.new('RGB', (100, 100), color='green')
+    
+    # Używamy tmp_path (wbudowany ficzer pytesta) do zapisu w tymczasowym katalogu
+    pdf_path = tmp_path / "test_output.pdf"
+    
+    ImageProcessor.create_pdf([img1, img2], str(pdf_path))
+    
+    assert os.path.exists(pdf_path)
+    assert os.path.getsize(pdf_path) > 0
