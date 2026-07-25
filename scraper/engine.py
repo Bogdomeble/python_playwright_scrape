@@ -24,7 +24,9 @@ class CanvaScraperEngine:
         async with self.semaphore:
             logger.info(f"[POBIERANIE] Otwieranie slajdu #{page_num}...")
             
-            context = await browser.new_context()
+            context = await browser.new_context(
+            device_scale_factor=self.config.device_scale_factor
+            )
             page = await context.new_page()
             await page.set_viewport_size({
                 "width": self.config.viewport_width, 

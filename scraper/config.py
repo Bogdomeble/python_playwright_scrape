@@ -13,6 +13,8 @@ class ScraperConfig:
     viewport_width: int = 1920
     viewport_height: int = 1080
 
+    device_scale_factor: float = 2.0 # skalowanie obrazu
+
 def setup_logger(debug: bool = False) -> logging.Logger:
     """Konfiguruje globalny system logowania (rejestrowania zdarzeń)."""
     level = logging.DEBUG if debug else logging.INFO

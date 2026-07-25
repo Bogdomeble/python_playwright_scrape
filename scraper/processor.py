@@ -1,3 +1,4 @@
+# scraper/processor.py
 import io
 import logging
 from typing import List, Tuple
@@ -10,12 +11,18 @@ class ImageProcessor:
     
     @staticmethod
     def process_screenshot(screenshot_bytes: bytes, width: int, height: int, crop_bottom: int = 0) -> Image.Image:
-        """Konwertuje bajty na obraz PIL i ewentualnie przycina (np. pasek nawigacyjny)."""
+        """Konwertuje bajty na obraz PIL i inteligentnie przycina, jeśli zachodzi taka potrzeba."""
         image = Image.open(io.BytesIO(screenshot_bytes)).convert('RGB')
+        
+        # Jeśli nie żądamy ucinania dolnego paska, po prostu zwracamy CAŁY oryginalny obraz w wysokiej jakości
         if crop_bottom > 0:
-            image = image.crop((0, 0, width, height - crop_bottom))
-        else:
-            image = image.crop((0, 0, width, height))
+            actual_width, actual_height = image.size
+            # Wyliczamy skalę, aby poprawnie odciąć dolny pasek niezależnie od device_scale_factor
+            scale = actual_height / height 
+            scaled_crop = int(crop_bottom * scale)
+            
+            image = image.crop((0, 0, actual_width, actual_height - scaled_crop))
+            
         return image
 
     @staticmethod
