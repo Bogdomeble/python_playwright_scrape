@@ -47,6 +47,13 @@ class CanvaScraperEngine:
             
             await page.wait_for_timeout(self.config.render_wait_ms) 
             
+            # --- Czekanie na zniknięcie UI ---
+            if self.config.wait_ui_hide_ms > 0:
+                # Ruch myszką na samą górę powiadamia, że jesteśmy nieaktywni na dole
+                await page.mouse.move(10, 10)
+                await page.wait_for_timeout(self.config.wait_ui_hide_ms)
+            # ---------------------------------------------
+
             screenshot_bytes = await page.screenshot()
             final_url = page.url
             await context.close()

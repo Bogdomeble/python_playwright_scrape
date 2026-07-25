@@ -11,11 +11,14 @@ class ScraperConfig:
     total_slides: int = 0
     max_concurrent: int = 3
     timeout_ms: int = 60000
+    wait_ui_hide_ms: int = 0 # czas oczekiwania na ukrycie paska ladowania
     render_wait_ms: int = 8000
     viewport_width: int = 1920
     viewport_height: int = 1080
 
     device_scale_factor: float = 2.0 # skalowanie obrazu
+
+
 
 def setup_logger(debug: bool = False) -> logging.Logger:
     """Konfiguruje globalny system logowania (konsola + plik tekstowy)."""

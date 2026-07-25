@@ -7,13 +7,14 @@ from datetime import datetime
 from scraper.config import ScraperConfig, setup_logger
 from scraper.engine import CanvaScraperEngine
 
-def run_single(url: str, slides: int, output: str, concurrent: int, debug: bool):
+def run_single(url: str, slides: int, output: str, concurrent: int, debug: bool, wait_ui: bool):
     logger = setup_logger(debug)
     config = ScraperConfig(
         base_url=url,
         output_pdf=output,
         total_slides=slides,
-        max_concurrent=concurrent
+        max_concurrent=concurrent,
+        wait_ui_hide_ms=1200 if wait_ui else 0  # <--- Dodane: 1.2 sekundy na opadnięcie paska
     )
     engine = CanvaScraperEngine(config)
     
@@ -25,7 +26,7 @@ def run_single(url: str, slides: int, output: str, concurrent: int, debug: bool)
     except Exception as e:
         logger.error(f"[BLAD] Wystapil blad krytyczny: {e}")
 
-def process_batch(filepath: str, concurrent: int, debug: bool):
+def process_batch(filepath: str, concurrent: int, debug: bool, wait_ui: bool):
     logger = setup_logger(debug)
     
     if not os.path.exists(filepath):
@@ -69,7 +70,7 @@ def process_batch(filepath: str, concurrent: int, debug: bool):
         logger.info(f"[ZADANIE {i}/{len(lines)}] Pobieranie: {output}")
         logger.info("="*40)
         
-        config = ScraperConfig(base_url=url, output_pdf=output, total_slides=slides, max_concurrent=concurrent)
+        config = ScraperConfig(base_url=url, output_pdf=output, total_slides=slides, max_concurrent=concurrent, wait_ui_hide_ms=1200 if wait_ui else 0)  # <--- Dodane: 1.2 sekundy na opadnięcie paska
         engine = CanvaScraperEngine(config)
         try:
             asyncio.run(engine.run())
@@ -104,6 +105,7 @@ def main_cli():
     parser.add_argument("-o", "--output", type=str, help="Nazwa pliku PDF (domyslnie z timestampem).")
     parser.add_argument("-c", "--concurrent", type=int, default=3, help="Max jednoczesnych polaczen (domyslnie: 3).")
     parser.add_argument("--debug", action="store_true", help="Wlacza szczegolowe logi.")
+    parser.add_argument("--wait-ui", action="store_true", help="Czeka dodatkowa sekunde, upewniajac sie ze interfejs Canvy na dole ekranu zniknal.")
 
     args = parser.parse_args()
 
@@ -112,7 +114,7 @@ def main_cli():
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             args.output = f"prezentacja_{timestamp}.pdf"
             
-        run_single(args.url, args.slides, args.output, args.concurrent, args.debug)
+        run_single(args.url, args.slides, args.output, args.concurrent, args.debug,args.wait_ui)
 
     elif args.batch:
-        process_batch(args.batch, args.concurrent, args.debug)
+        process_batch(args.batch, args.concurrent, args.debug,args.wait_ui)
