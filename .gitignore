@@ -11,6 +11,8 @@ __pycache__/
 #presentations
 
 prezentacja*
+*.txt
+!requirements.txt
 # Distribution / packaging
 .Python
 build/

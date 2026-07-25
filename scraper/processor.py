@@ -1,4 +1,3 @@
-# scraper/processor.py
 import io
 import logging
 from typing import List, Tuple
