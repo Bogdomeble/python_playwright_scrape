@@ -1,6 +1,9 @@
+# scraper/engine.py
 import asyncio
 import logging
+import io
 from typing import List, Tuple
+from PIL import Image
 from playwright.async_api import async_playwright, Browser, Page
 
 from scraper.config import ScraperConfig
@@ -15,10 +18,11 @@ class CanvaScraperEngine:
         self.config = config
         self.semaphore = asyncio.Semaphore(self.config.max_concurrent)
 
-    async def _fetch_slide(self, browser: Browser, page_num: int) -> Tuple[int, bytes]:
-        """Pobiera pojedynczy slajd w izolowanym kontekście przeglądarki."""
+    # Zmiana: teraz zwraca 3 elementy (w tym finalny URL z przeglądarki)
+    async def _fetch_slide(self, browser: Browser, page_num: int) -> Tuple[int, bytes, str]:
+        """Pobiera pojedynczy slajd i zwraca numer, bajty obrazu oraz finalny adres URL."""
         async with self.semaphore:
-            logger.info(f"[{page_num}/{self.config.total_slides}] Otwieranie slajdu...")
+            logger.info(f"[POBIERANIE] Otwieranie slajdu #{page_num}...")
             
             context = await browser.new_context()
             page = await context.new_page()
@@ -31,11 +35,9 @@ class CanvaScraperEngine:
             
             try:
                 await page.goto(url, wait_until="load", timeout=self.config.timeout_ms)
-                # Wybudzenie interfejsu Canvy wirtualną myszką
                 await page.mouse.move(self.config.viewport_width // 2, self.config.viewport_height // 2)
                 await page.mouse.move(10, 10)
                 
-                # Dynamiczne oczekiwanie na wyrenderowanie tagów <img>
                 await page.wait_for_function("""
                     () => {
                         const images = Array.from(document.querySelectorAll('img'));
@@ -46,103 +48,114 @@ class CanvaScraperEngine:
             except Exception as e:
                 logger.warning(f"[{page_num}] Timeout lub błąd ładowania: {str(e)}. Wymuszam zrzut.")
             
-            # Bufor czasowy na renderowanie WebGL przez silnik Canvy
             await page.wait_for_timeout(self.config.render_wait_ms) 
             
             screenshot_bytes = await page.screenshot()
+            final_url = page.url # Zapisujemy faktyczny adres po ewentualnych przekierowaniach Canvy
             await context.close()
             
-            logger.info(f"[{page_num}/{self.config.total_slides}] ✅ Zrzut ekranu pobrany.")
-            return page_num, screenshot_bytes
+            logger.info(f"[{page_num}] ✅ Zrzut ekranu pobrany.")
+            return page_num, screenshot_bytes, final_url
 
-
-    async def _detect_slides(self, browser: Browser) -> int:
-        """Próbuje automatycznie odgadnąć liczbę slajdów w prezentacji."""
-        logger.info("🔍 Rozpoczęto automatyczne wykrywanie liczby slajdów...")
-        context = await browser.new_context()
-        page = await context.new_page()
+    def _is_same_slide(self, bytes1: bytes, bytes2: bytes) -> bool:
+        """Porównuje miniatury dwóch obrazów, aby stwierdzić czy zawróciliśmy do 1 slajdu."""
         try:
-            # 1. Nawigujemy na bardzo duży numer strony
-            test_url = f"{self.config.base_url}#9999"
-            await page.goto(test_url, wait_until="load", timeout=self.config.timeout_ms)
+            # Skalujemy do miniatury 16x16 i konwertujemy na czarno-biały (odporność na rendering)
+            img1 = Image.open(io.BytesIO(bytes1)).resize((16, 16)).convert('L')
+            img2 = Image.open(io.BytesIO(bytes2)).resize((16, 16)).convert('L')
             
-            # Czekamy, aż skrypty Canvy zorientują się i poprawią URL (tzw. URL clamping)
-            await page.wait_for_timeout(3500)
+            pixels1 = list(img1.getdata())
+            pixels2 = list(img2.getdata())
             
-            # 2. Sprawdzamy czy URL zmienił się na prawdziwy numer (np. z #9999 na #15)
-            if "#" in page.url:
-                hash_val = page.url.split("#")[-1]
-                if hash_val.isdigit() and int(hash_val) != 9999:
-                    logger.info(f"💡 Metoda URL zadziałała. Wykryto slajdów: {hash_val}")
-                    return int(hash_val)
-                    
-            # 3. Fallback: Szukamy w interfejsie odtwarzacza tekstu "1 / 15", "1 of 15", lub "1 z 15"
-            text_count = await page.evaluate('''() => {
-                const allText = document.body.innerText.split('\\n');
-                for (let line of allText) {
-                    let match = line.match(/^\\s*\\d+\\s*(?:\\/|of|z)\\s*(\\d+)\\s*$/i);
-                    if (match) return parseInt(match[1]);
-                }
-                return null;
-            }''')
-            
-            if text_count:
-                logger.info(f"💡 Metoda skanowania tekstu zadziałała. Wykryto slajdów: {text_count}")
-                return text_count
-                
-        except Exception as e:
-            logger.warning(f"Błąd podczas detekcji: {e}")
-        finally:
-            await context.close()
-            
-        logger.warning("⚠️ Nie udało się automatycznie ustalić liczby slajdów. Ustawiam domyślnie na 1.")
-        return 1
+            # Liczymy średni błąd na piksel
+            diff = sum(abs(p1 - p2) for p1, p2 in zip(pixels1, pixels2)) / len(pixels1)
+            return diff < 5.0 # Różnica poniżej 5 w skali 0-255 oznacza, że to jest ten sam obraz
+        except Exception:
+            return False
 
     async def run(self):
         """Główna orkiestracja pobierania wszystkich slajdów."""
         async with async_playwright() as p:
             logger.info("Uruchamianie przeglądarki Chromium...")
             browser = await p.chromium.launch(
-                headless=False, # Flaga headless=False optymalizuje renderowanie WebGL w niektórych środowiskach
+                headless=False,
                 channel="chrome",
                 args=[
                     "--headless-new",
                     "--disable-background-timer-throttling",
                     "--disable-backgrounding-occluded-windows",
                     "--disable-renderer-backgrounding",
-                    "--mute-audio"
-
-                    # Wypycha okno poza widoczny obszar monitora!
+                    "--mute-audio",
                     "--window-position=-32000,-32000",
                 ]
             )
-
-             # --- DODAJ TEN BLOK KODU TUTAJ ---
-            if self.config.total_slides <= 0:
-                self.config.total_slides = await self._detect_slides(browser)
-            # ---------------------------------
-
-            tasks = [
-                self._fetch_slide(browser, page_num) 
-                for page_num in range(1, self.config.total_slides + 1)
-            ]
             
-            # Zbieramy wyniki współbieżnie
-            raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+            valid_results = []
+
+            if self.config.total_slides > 0:
+                # Tradycyjny tryb (jeśli ręcznie wpiszesz ilość slajdów w konsoli)
+                tasks = [self._fetch_slide(browser, p) for p in range(1, self.config.total_slides + 1)]
+                raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+                for res in raw_results:
+                    if isinstance(res, tuple):
+                        valid_results.append((res[0], res[1]))
+            else:
+                # Tryb dynamicznej pętli wymyślony przez Ciebie!
+                logger.info("Wykryto brak zdefiniowanej liczby slajdów. Szukam końca na żywo...")
+                current_page = 1
+                end_reached = False
+                first_slide_bytes = None
+                
+                while not end_reached:
+                    # Tworzymy paczkę (np. po 3 slajdy na raz, zależnie od max_concurrent)
+                    tasks = [self._fetch_slide(browser, current_page + i) for i in range(self.config.max_concurrent)]
+                    batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+                    
+                    # Sortujemy, żeby analizować wyniki po kolei (np. 1, 2, 3...)
+                    ok_results = [r for r in batch_results if isinstance(r, tuple)]
+                    ok_results.sort(key=lambda x: x[0])
+
+                    for page_num, screenshot_bytes, final_url in ok_results:
+                        if page_num == 1:
+                            # Zapamiętujemy, jak wygląda slajd nr 1
+                            first_slide_bytes = screenshot_bytes
+                            valid_results.append((page_num, screenshot_bytes))
+                            continue
+                        
+                        # SPRAWDZENIE 1: Czy URL zawrócił do #1
+                        url_hash = final_url.split("#")[-1] if "#" in final_url else ""
+                        is_url_looped = url_hash == "1" or (url_hash.isdigit() and int(url_hash) < page_num)
+                        
+                        # SPRAWDZENIE 2: Wizualne (czy obraz to znowu 1 strona)
+                        is_visually_looped = False
+                        if first_slide_bytes and not is_url_looped:
+                            is_visually_looped = self._is_same_slide(first_slide_bytes, screenshot_bytes)
+                            
+                        # Jeśli którekolwiek zabezpieczenie złapało pętlę - zamykamy poszukiwania!
+                        if is_url_looped or is_visually_looped:
+                            logger.info(f"🛑 Osiągnięto limit na slajdzie {page_num-1}! (Slajd {page_num} to powtórka)")
+                            end_reached = True
+                            break # Ucinamy tę paczkę, nie zapisujemy "powtórki"
+                        
+                        valid_results.append((page_num, screenshot_bytes))
+                        
+                    # Idziemy do kolejnej paczki
+                    if not end_reached:
+                        current_page += self.config.max_concurrent
+
             await browser.close()
             
-            # Filtrujemy błędy i sortujemy po numerze strony
-            valid_results = [res for res in raw_results if isinstance(res, tuple)]
-            valid_results.sort(key=lambda x: x[0])
-            
             # Przetwarzanie i łączenie w PDF
-            images = [
-                ImageProcessor.process_screenshot(
-                    bytes_data, 
-                    self.config.viewport_width, 
-                    self.config.viewport_height
-                )
-                for _, bytes_data in valid_results
-            ]
-            
-            ImageProcessor.create_pdf(images, self.config.output_pdf)
+            if valid_results:
+                valid_results.sort(key=lambda x: x[0]) # Upewniamy się, że są w kolejności
+                images = [
+                    ImageProcessor.process_screenshot(
+                        bytes_data, 
+                        self.config.viewport_width, 
+                        self.config.viewport_height
+                    )
+                    for _, bytes_data in valid_results
+                ]
+                ImageProcessor.create_pdf(images, self.config.output_pdf)
+            else:
+                logger.warning("❌ Nie udało się pobrać żadnych prawidłowych slajdów.")

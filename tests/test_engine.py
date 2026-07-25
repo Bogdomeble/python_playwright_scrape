@@ -15,7 +15,7 @@ async def test_fetch_slide_logic():
     mock_browser = AsyncMock()
     mock_browser.new_context.return_value = mock_context
 
-    page_num, bytes_res = await engine._fetch_slide(mock_browser, 1)
+    page_num, bytes_res, final_url = await engine._fetch_slide(mock_browser, 1) # <--- DODAJ final_url
 
     assert page_num == 1
     assert bytes_res == b"fake_image_bytes"
@@ -36,8 +36,8 @@ async def test_engine_run_orchestration(mock_processor, mock_playwright):
     
     # Podmieniamy fizyczne pobieranie (metodę _fetch_slide) żeby od razu zracała fałszywe bajty
     # Używamy side_effect aby dla każdej karty (slajd 1 i slajd 2) zwrócić inną wartość
-    engine._fetch_slide = AsyncMock(side_effect=[(1, b"img1"), (2, b"img2")])
-    
+    engine._fetch_slide = AsyncMock(side_effect=[(1, b"img1", "url#1"), (2, b"img2", "url#2")]) # <--- DODAJ url#1 i url#2
+        
     await engine.run()
     
     # Weryfikacja (Asserts) czy wszystko uruchomiło się poprawnie
