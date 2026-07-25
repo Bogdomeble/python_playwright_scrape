@@ -1,3 +1,4 @@
+# scraper/cli.py
 import argparse
 import asyncio
 import sys
@@ -8,7 +9,6 @@ from scraper.config import ScraperConfig, setup_logger
 from scraper.engine import CanvaScraperEngine
 
 def run_single(url: str, slides: int, output: str, concurrent: int, debug: bool):
-    """Pobiera pojedynczą prezentację."""
     logger = setup_logger(debug)
     config = ScraperConfig(
         base_url=url,
@@ -20,15 +20,16 @@ def run_single(url: str, slides: int, output: str, concurrent: int, debug: bool)
     
     try:
         asyncio.run(engine.run())
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        logger.info("[STOP] Dzialanie programu zostalo przerwane przez uzytkownika.")
     except Exception as e:
-        logger.error(f"Wystąpił błąd krytyczny: {e}")
+        logger.error(f"[BLAD] Wystapil blad krytyczny: {e}")
 
 def process_batch(filepath: str, concurrent: int, debug: bool):
-    """Pobiera wiele prezentacji na podstawie pliku tekstowego."""
     logger = setup_logger(debug)
     
     if not os.path.exists(filepath):
-        logger.error(f"❌ Plik '{filepath}' nie istnieje.")
+        logger.error(f"[BLAD] Plik '{filepath}' nie istnieje.")
         return
 
     with open(filepath, 'r', encoding='utf-8') as f:
@@ -41,15 +42,13 @@ def process_batch(filepath: str, concurrent: int, debug: bool):
             continue
 
         parts = line.split()
-
-        if len(parts) < 1: # Ignoruj jeśli po podzieleniu linijka jest pusta
+        if len(parts) < 1:
             continue
 
         url = parts[0]
         slides = 0
         output = ""
         
-        # Super-elastyczne odczytywanie pliku tekstowego
         if len(parts) == 2:
             if parts[1].isdigit():
                 slides = int(parts[1])
@@ -67,61 +66,53 @@ def process_batch(filepath: str, concurrent: int, debug: bool):
             output = f"prezentacja_{timestamp}_{i}.pdf"
         
         logger.info(f"\n" + "="*40)
-        logger.info(f"▶️ [ZADANIE {i}/{len(lines)}] Pobieranie: {output}")
+        logger.info(f"[ZADANIE {i}/{len(lines)}] Pobieranie: {output}")
         logger.info("="*40)
         
         config = ScraperConfig(base_url=url, output_pdf=output, total_slides=slides, max_concurrent=concurrent)
         engine = CanvaScraperEngine(config)
         try:
             asyncio.run(engine.run())
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            logger.info("[STOP] Dzialanie programu zostalo przerwane. Konczenie zadan wsadowych.")
+            break
         except Exception as e:
-            logger.error(f"❌ Błąd podczas przetwarzania zadania z linii {i}: {e}")
+            logger.error(f"[BLAD] Blad podczas przetwarzania zadania z linii {i}: {e}")
 
 def main_cli():
-    """Główny punkt wejścia wywoływany przez skrypt startowy."""
-    
-    # [POPRAWKA] Odporne na błędy wywołanie PowerShella przy dwukliku
     if len(sys.argv) == 1:
         exe_name = os.path.basename(sys.executable) if getattr(sys, 'frozen', False) else "python main.py"
         
-        # Używamy złączonych komend PowerShell dla zachowania stabilności
         ps_command = (
             "Clear-Host; "
             "Write-Host '======================================' -ForegroundColor Cyan; "
-            "Write-Host '   🚀 WITAJ W CANVA SCRAPER CLI!' -ForegroundColor Green; "
+            "Write-Host '   WITAJ W CANVA SCRAPER CLI!' -ForegroundColor Green; "
             "Write-Host '======================================' -ForegroundColor Cyan; "
             "Write-Host 'System gotowy do przyjmowania komend.'; "
             f"Write-Host 'Wpisz: .\\{exe_name} --help aby zobaczyc instrukcje.' -ForegroundColor Yellow;"
         )
         
-        # Uruchamiamy PowerShell z bezpiecznie sformatowaną komendą
         subprocess.Popen(['powershell', '-NoExit', '-Command', ps_command])
         sys.exit(0)
 
-    # Standardowa logika
-    parser = argparse.ArgumentParser(description="Narzędzie CLI do asynchronicznego pobierania slajdów z Canvy.")
+    parser = argparse.ArgumentParser(description="Narzedzie CLI do pobierania slajdow z Canvy.")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--url", type=str, help="Adres URL pojedynczej prezentacji Canva.")
-    group.add_argument("--batch", type=str, help="Ścieżka do pliku tekstowego z wieloma zadaniami.")
+    group.add_argument("--batch", type=str, help="Sciezka do pliku tekstowego z zadaniami.")
     
-    parser.add_argument("-s", "--slides", type=int, default=0, help="Liczba slajdów (opcjonalnie - domyślnie autodetekcja).")
-    parser.add_argument("-o", "--output", type=str, help="Nazwa pliku PDF (domyślnie z timestampem).")
-    parser.add_argument("-c", "--concurrent", type=int, default=3, help="Max jednoczesnych połączeń (domyślnie: 3).")
-    parser.add_argument("--debug", action="store_true", help="Włącza szczegółowe logi.")
+    parser.add_argument("-s", "--slides", type=int, default=0, help="Liczba slajdow (opcjonalnie).")
+    parser.add_argument("-o", "--output", type=str, help="Nazwa pliku PDF (domyslnie z timestampem).")
+    parser.add_argument("-c", "--concurrent", type=int, default=3, help="Max jednoczesnych polaczen (domyslnie: 3).")
+    parser.add_argument("--debug", action="store_true", help="Wlacza szczegolowe logi.")
 
     args = parser.parse_args()
 
     if args.url:
-            # if not args.slides:
-            #     parser.error("Argument -s/--slides jest wymagany, gdy używasz opcji --url.")
+        if not args.output:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            args.output = f"prezentacja_{timestamp}.pdf"
             
-            # Jeśli nie podano -o, generujemy timestamp
-            if not args.output:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                args.output = f"prezentacja_{timestamp}.pdf"
-                
-            run_single(args.url, args.slides, args.output, args.concurrent, args.debug)
+        run_single(args.url, args.slides, args.output, args.concurrent, args.debug)
 
-        # --- DODAJ TE DWIE LINIJKI ---
     elif args.batch:
         process_batch(args.batch, args.concurrent, args.debug)

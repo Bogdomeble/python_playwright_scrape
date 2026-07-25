@@ -16,11 +16,31 @@ class ScraperConfig:
     device_scale_factor: float = 2.0 # skalowanie obrazu
 
 def setup_logger(debug: bool = False) -> logging.Logger:
-    """Konfiguruje globalny system logowania (rejestrowania zdarzeń)."""
+    """Konfiguruje globalny system logowania (konsola + plik tekstowy)."""
+    logger = logging.getLogger("CanvaScraper")
+    
+    # Zapobiega duplikowaniu logów przy pętli batch (czyszczenie starych handlerów)
+    if logger.hasHandlers():
+        logger.handlers.clear()
+        
     level = logging.DEBUG if debug else logging.INFO
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
-    )
-    return logging.getLogger("CanvaScraper")
+    logger.setLevel(level)
+    
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+    
+    # 1. Wypisywanie w konsoli
+    ch = logging.StreamHandler()
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
+    
+    # 2. Zapisywanie do pliku
+    os.makedirs("logs", exist_ok=True)
+    # Logi nazywamy dzisiejszą datą, żeby wszystkie zadania z danego dnia były w jednym pliku
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    log_file = os.path.join("logs", f"scraper_{date_str}.log")
+    
+    fh = logging.FileHandler(log_file, encoding='utf-8')
+    fh.setFormatter(formatter)
+    logger.addHandler(fh)
+    
+    return logger
