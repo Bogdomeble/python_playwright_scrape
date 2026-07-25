@@ -55,6 +55,49 @@ class CanvaScraperEngine:
             logger.info(f"[{page_num}/{self.config.total_slides}] ✅ Zrzut ekranu pobrany.")
             return page_num, screenshot_bytes
 
+
+    async def _detect_slides(self, browser: Browser) -> int:
+        """Próbuje automatycznie odgadnąć liczbę slajdów w prezentacji."""
+        logger.info("🔍 Rozpoczęto automatyczne wykrywanie liczby slajdów...")
+        context = await browser.new_context()
+        page = await context.new_page()
+        try:
+            # 1. Nawigujemy na bardzo duży numer strony
+            test_url = f"{self.config.base_url}#9999"
+            await page.goto(test_url, wait_until="load", timeout=self.config.timeout_ms)
+            
+            # Czekamy, aż skrypty Canvy zorientują się i poprawią URL (tzw. URL clamping)
+            await page.wait_for_timeout(3500)
+            
+            # 2. Sprawdzamy czy URL zmienił się na prawdziwy numer (np. z #9999 na #15)
+            if "#" in page.url:
+                hash_val = page.url.split("#")[-1]
+                if hash_val.isdigit() and int(hash_val) != 9999:
+                    logger.info(f"💡 Metoda URL zadziałała. Wykryto slajdów: {hash_val}")
+                    return int(hash_val)
+                    
+            # 3. Fallback: Szukamy w interfejsie odtwarzacza tekstu "1 / 15", "1 of 15", lub "1 z 15"
+            text_count = await page.evaluate('''() => {
+                const allText = document.body.innerText.split('\\n');
+                for (let line of allText) {
+                    let match = line.match(/^\\s*\\d+\\s*(?:\\/|of|z)\\s*(\\d+)\\s*$/i);
+                    if (match) return parseInt(match[1]);
+                }
+                return null;
+            }''')
+            
+            if text_count:
+                logger.info(f"💡 Metoda skanowania tekstu zadziałała. Wykryto slajdów: {text_count}")
+                return text_count
+                
+        except Exception as e:
+            logger.warning(f"Błąd podczas detekcji: {e}")
+        finally:
+            await context.close()
+            
+        logger.warning("⚠️ Nie udało się automatycznie ustalić liczby slajdów. Ustawiam domyślnie na 1.")
+        return 1
+
     async def run(self):
         """Główna orkiestracja pobierania wszystkich slajdów."""
         async with async_playwright() as p:
@@ -73,7 +116,12 @@ class CanvaScraperEngine:
                     "--window-position=-32000,-32000",
                 ]
             )
-            
+
+             # --- DODAJ TEN BLOK KODU TUTAJ ---
+            if self.config.total_slides <= 0:
+                self.config.total_slides = await self._detect_slides(browser)
+            # ---------------------------------
+
             tasks = [
                 self._fetch_slide(browser, page_num) 
                 for page_num in range(1, self.config.total_slides + 1)

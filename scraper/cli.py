@@ -3,6 +3,7 @@ import asyncio
 import sys
 import os
 import subprocess
+from datetime import datetime
 from scraper.config import ScraperConfig, setup_logger
 from scraper.engine import CanvaScraperEngine
 
@@ -40,18 +41,30 @@ def process_batch(filepath: str, concurrent: int, debug: bool):
             continue
 
         parts = line.split()
-        if len(parts) < 2:
-            logger.warning(f"⚠️ Pomijam linię {i} - zły format. Wymagane min. URL i LICZBA_SLAJDÓW.")
+
+        if len(parts) < 1: # Ignoruj jeśli po podzieleniu linijka jest pusta
             continue
 
         url = parts[0]
-        try:
-            slides = int(parts[1])
-        except ValueError:
-            logger.warning(f"⚠️ Pomijam linię {i} - liczba slajdów '{parts[1]}' nie jest prawidłowa.")
-            continue
-
-        output = parts[2] if len(parts) > 2 else f"batch_prezentacja_{i}.pdf"
+        slides = 0
+        output = ""
+        
+        # Super-elastyczne odczytywanie pliku tekstowego
+        if len(parts) == 2:
+            if parts[1].isdigit():
+                slides = int(parts[1])
+            else:
+                output = parts[1]
+        elif len(parts) >= 3:
+            if parts[1].isdigit():
+                slides = int(parts[1])
+                output = parts[2]
+            else:
+                output = parts[1]
+                
+        if not output:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output = f"prezentacja_{timestamp}_{i}.pdf"
         
         logger.info(f"\n" + "="*40)
         logger.info(f"▶️ [ZADANIE {i}/{len(lines)}] Pobieranie: {output}")
@@ -91,16 +104,24 @@ def main_cli():
     group.add_argument("--url", type=str, help="Adres URL pojedynczej prezentacji Canva.")
     group.add_argument("--batch", type=str, help="Ścieżka do pliku tekstowego z wieloma zadaniami.")
     
-    parser.add_argument("-s", "--slides", type=int, help="Liczba slajdów (wymagane przy --url).")
-    parser.add_argument("-o", "--output", type=str, default="prezentacja.pdf", help="Nazwa pliku PDF (domyślnie: prezentacja.pdf).")
+    parser.add_argument("-s", "--slides", type=int, default=0, help="Liczba slajdów (opcjonalnie - domyślnie autodetekcja).")
+    parser.add_argument("-o", "--output", type=str, help="Nazwa pliku PDF (domyślnie z timestampem).")
     parser.add_argument("-c", "--concurrent", type=int, default=3, help="Max jednoczesnych połączeń (domyślnie: 3).")
     parser.add_argument("--debug", action="store_true", help="Włącza szczegółowe logi.")
 
     args = parser.parse_args()
 
     if args.url:
-        if not args.slides:
-            parser.error("Argument -s/--slides jest wymagany, gdy używasz opcji --url.")
-        run_single(args.url, args.slides, args.output, args.concurrent, args.debug)
+            # if not args.slides:
+            #     parser.error("Argument -s/--slides jest wymagany, gdy używasz opcji --url.")
+            
+            # Jeśli nie podano -o, generujemy timestamp
+            if not args.output:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                args.output = f"prezentacja_{timestamp}.pdf"
+                
+            run_single(args.url, args.slides, args.output, args.concurrent, args.debug)
+
+        # --- DODAJ TE DWIE LINIJKI ---
     elif args.batch:
         process_batch(args.batch, args.concurrent, args.debug)

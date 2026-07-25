@@ -6,7 +6,7 @@ class ScraperConfig:
     """Klasa przechowująca konfigurację pobierania."""
     base_url: str
     output_pdf: str
-    total_slides: int
+    total_slides: int = 0
     max_concurrent: int = 3
     timeout_ms: int = 60000
     render_wait_ms: int = 8000
