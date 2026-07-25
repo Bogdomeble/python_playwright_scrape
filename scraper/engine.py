@@ -89,6 +89,8 @@ class CanvaScraperEngine:
                 tasks = [self._fetch_slide(browser, p) for p in range(1, self.config.total_slides + 1)]
                 raw_results = await asyncio.gather(*tasks, return_exceptions=True)
                 for res in raw_results:
+                    if isinstance(res, (KeyboardInterrupt, SystemExit, asyncio.CancelledError)):
+                        raise res 
                     if isinstance(res, tuple):
                         valid_results.append((res[0], res[1]))
             else:
@@ -101,6 +103,10 @@ class CanvaScraperEngine:
                     tasks = [self._fetch_slide(browser, current_page + i) for i in range(self.config.max_concurrent)]
                     batch_results = await asyncio.gather(*tasks, return_exceptions=True)
                     
+                    for res in batch_results:
+                        if isinstance(res, (KeyboardInterrupt, SystemExit, asyncio.CancelledError)):
+                            raise res 
+
                     ok_results = [r for r in batch_results if isinstance(r, tuple)]
                     ok_results.sort(key=lambda x: x[0])
 

@@ -20,7 +20,8 @@ def run_single(url: str, slides: int, output: str, concurrent: int, debug: bool)
     try:
         asyncio.run(engine.run())
     except (KeyboardInterrupt, asyncio.CancelledError):
-        logger.info("[STOP] Dzialanie programu zostalo przerwane przez uzytkownika.")
+        logger.info("[STOP] Dzialanie programu zostalo przerwane przez uzytkownika. Zamykam!")
+        sys.exit(0)
     except Exception as e:
         logger.error(f"[BLAD] Wystapil blad krytyczny: {e}")
 
@@ -74,7 +75,7 @@ def process_batch(filepath: str, concurrent: int, debug: bool):
             asyncio.run(engine.run())
         except (KeyboardInterrupt, asyncio.CancelledError):
             logger.info("[STOP] Dzialanie programu zostalo przerwane. Konczenie zadan wsadowych.")
-            break
+            sys.exit(0)
         except Exception as e:
             logger.error(f"[BLAD] Blad podczas przetwarzania zadania z linii {i}: {e}")
 

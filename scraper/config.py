@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 import logging
+import os
+from datetime import datetime
 
 @dataclass
 class ScraperConfig:
