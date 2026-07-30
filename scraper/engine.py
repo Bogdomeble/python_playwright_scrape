@@ -20,9 +20,13 @@ class CanvaScraperEngine:
             logger.info(f"[POBIERANIE] Otwieranie slajdu #{page_num}...")
             
             context = await browser.new_context(
-                device_scale_factor=self.config.device_scale_factor
+                device_scale_factor=self.config.device_scale_factor,
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             )
             page = await context.new_page()
+
+            await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            
             await page.set_viewport_size({
                 "width": self.config.viewport_width, 
                 "height": self.config.viewport_height
@@ -78,15 +82,25 @@ class CanvaScraperEngine:
         async with async_playwright() as p:
             logger.info("Uruchamianie przegladarki Chromium...")
             browser = await p.chromium.launch(
-                headless=False,
+                # headless=False,
+                headless=True,
                 channel="chrome",
                 args=[
-                    "--headless-new",
+                    # "--headless-new",
+                    # "--disable-background-timer-throttling",
+                    # "--disable-backgrounding-occluded-windows",
+                    # "--disable-renderer-backgrounding",
+                    # "--mute-audio",
+                    # "--window-position=-32000,-32000",
                     "--disable-background-timer-throttling",
                     "--disable-backgrounding-occluded-windows",
                     "--disable-renderer-backgrounding",
                     "--mute-audio",
-                    "--window-position=-32000,-32000",
+                    "--ignore-certificate-errors", 
+                    "--hide-scrollbars" # Przydatne przy robieniu screenshotów
+                    "--ignore-gpu-blocklist", # Wymusza użycie GPU pomimo trybu headless
+                    "--enable-webgl",         # Konieczne dla silnika Canvy
+                    "--use-gl=angle",         # Renderowanie sprzętowe
                 ]
             )
             
