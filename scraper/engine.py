@@ -97,7 +97,7 @@ class CanvaScraperEngine:
                     "--disable-renderer-backgrounding",
                     "--mute-audio",
                     "--ignore-certificate-errors", 
-                    "--hide-scrollbars" # Przydatne przy robieniu screenshotów
+                    "--hide-scrollbars", # Przydatne przy robieniu screenshotów
                     "--ignore-gpu-blocklist", # Wymusza użycie GPU pomimo trybu headless
                     "--enable-webgl",         # Konieczne dla silnika Canvy
                     "--use-gl=angle",         # Renderowanie sprzętowe
